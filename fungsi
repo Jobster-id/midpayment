@@ -1,0 +1,95 @@
+/// Midtrans Payment Code Starts ////
+public function midtrans_api_setup(){
+	global $db;
+	global $dir;
+	require_once "$dir/vendor/autoload.php";
+	$get_payment_settings = $db->select("payment_settings");
+	$row_payment_settings = $get_payment_settings->fetch();
+	$midtrans_client_key = $row_payment_settings->midtrans_client_key;
+	$midtrans_server_key = $row_payment_settings->midtrans_server_key;
+	$midtrans_currency_code = $row_payment_settings->midtrans_currency_code;
+	$midtrans_sandbox = $row_payment_settings->midtrans_sandbox;
+
+	$midtrans = array(
+	  "client_key"      => "$midtrans_client_key",
+	  "server_key"      => "$midtrans_server_key",
+	  "currency_code"   => "$midtrans_currency_code"
+	);
+
+	\Midtrans\Config::$serverKey=($midtrans['server_key']);
+	\Midtrans\Config::$isProduction=($midtrans['sandbox']);
+	return $midtrans;
+}
+
+public function midtrans($data){
+	global $site_url;
+	global $db;
+	$login_seller_user_name = $_SESSION['seller_user_name'];
+	$select_login_seller = $db->select("sellers",array("seller_user_name" => $login_seller_user_name));
+	$row_login_seller = $select_login_seller->fetch();
+	$login_seller_id = $row_login_seller->seller_id;
+	$login_seller_email = $row_login_seller->seller_email;
+	$midtrans = $this->midtrans_api_setup();
+	$params = array(
+    'transaction_details' => array(
+        'order_id' => rand(),
+        'gross_amount' => intval($data['amount']) * 100,
+		)
+	);
+
+	try {
+	  // Get Snap Payment Page URL
+	  $paymentUrl = \Midtrans\Snap::createTransaction($params)->redirect_url;
+	  
+	  // Redirect to Snap Payment Page
+	  header('Location: ' . $paymentUrl);
+	}
+	catch (Exception $e) {
+	  echo $e->getMessage();
+	}
+	if($params){
+
+    // echo "<pre>";
+    //   print_r($data);
+    // echo "</pre>";
+
+	  if($data['type'] == "proposal"){
+   	  $_SESSION['checkout_seller_id'] = $login_seller_id;
+   	  $_SESSION['proposal_id'] = $data['proposal_id'];
+   	  $_SESSION['proposal_qty'] = $data['proposal_qty'];
+   	  $_SESSION['proposal_price'] = $data['amount'];
+      $_SESSION['proposal_delivery'] = $data['proposal_delivery'];
+      $_SESSION['proposal_revisions'] = $data['proposal_revisions'];
+   	  if(isset($data['proposal_extras'])){
+   	    $_SESSION['proposal_extras'] = $data['proposal_extras'];
+   	  }
+   	  if(isset($data['proposal_minutes'])){
+        $_SESSION['proposal_minutes'] = $data['proposal_minutes'];
+   	  }
+	  }elseif ($data['type'] == "cart") {
+	     $_SESSION['cart_seller_id'] = $login_seller_id;
+       $_SESSION['reference_no'] = $data['reference_no'];
+	  }elseif($data['type'] == "featured_listing"){
+	     $_SESSION['proposal_id'] = $data['proposal_id'];
+	  }elseif($data['type'] == "request_offer"){
+   	  $offer_id = $data["offer_id"];
+   	  $_SESSION['offer_id'] = $data['offer_id'];
+   	  $_SESSION['offer_buyer_id'] = $data['offer_buyer_id'];
+	  }elseif($data['type'] == "message_offer"){ 
+   	  $_SESSION['message_offer_id'] = $data['message_offer_id'];
+   	  $_SESSION['message_offer_buyer_id'] = $data['message_offer_buyer_id'];
+	  }
+	  $_SESSION['method'] = "midtrans";
+	  if($data['type'] == "featured_listing"){
+      echo "<script>window.open('$site_url/proposals/featured_proposal','_self');</script>";
+	  }elseif($data['type'] == "orderExtendTime"){
+	  	return true;
+	  }elseif($data['type'] == "orderTip"){
+      return true;
+    }else{
+      echo "<script>window.open('$site_url/order','_self');</script>";
+	  }
+
+	}
+}
+/// Midtrans Payment Code Ends ////
